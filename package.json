@@ -15,5 +15,8 @@
   "bugs": {
     "url": "https://github.com/zc2638/redis-pool/issues"
   },
-  "homepage": "https://github.com/zc2638/redis-pool"
+  "homepage": "https://github.com/zc2638/redis-pool",
+  "dependencies": {
+    "ioredis": "^3.2.2"
+  }
 }
