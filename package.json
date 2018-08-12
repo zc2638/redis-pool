@@ -1,0 +1,19 @@
+{
+  "name": "pool",
+  "version": "1.0.0",
+  "description": "Resource pool based on redis",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test/index"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zc2638/redis-pool.git"
+  },
+  "author": "zc",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/zc2638/redis-pool/issues"
+  },
+  "homepage": "https://github.com/zc2638/redis-pool"
+}
