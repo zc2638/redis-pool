@@ -1,12 +1,6 @@
 'use strict';
 
 const Redis = require('ioredis');
-const redisConfig = {
-    port: 6379,
-    host: '127.0.0.1',
-    password: '',
-    db: 0
-};
 
 class Pool {
 
@@ -14,7 +8,7 @@ class Pool {
     {
         this.redis = new Redis(options);
         this.code = {
-            field: ['createCode'],
+            field: ['id'],
             filter: [],
         };
         this.poolHeadName = 'redis_pool';
@@ -23,7 +17,12 @@ class Pool {
     setRedis(options)
     {
         if (!options) {
-            return;
+            options = {
+                port: 6379,
+                host: '127.0.0.1',
+                password: '',
+                db: 0
+            };
         }
         this.redis = new Redis(options);
     }
@@ -39,7 +38,7 @@ class Pool {
     setPoolHeadName(name)
     {
         if (!name) {
-            return;
+            throw new Error('The parameter can not be empty.');
         }
         this.poolHeadName = name;
     }
@@ -53,48 +52,65 @@ class Pool {
         return poolName;
     }
 
-    async setPool(data, info, poolName)
+    getFieldKey(params, poolName)
     {
         const pre = this.getPoolName(poolName);
-        const {redis, code} = this;
-        const field = code.field;
-        const filter = code.filter;
-        let fieldKey, filterKey, task = [], pool_keys = [], status = true;
-        if (typeof info !== 'object' || !info) {
-            status = false;
-        }
+        const field = this.code.field;
+        let fieldKey;
+        let status = true;
         for (let k in field) {
             if (field.hasOwnProperty(k)) {
                 parseInt(k) === 0 ? fieldKey = pre : null;
-                if (!data[field[k]]) {
+                if (!params[field[k]]) {
                     status = false;
                     break;
                 }
-                fieldKey += '-' + field[k] + '_' + data[field[k]];
-            }
-        }
-        task.push(['rpush', pre, fieldKey]);
-        pool_keys.push(pre);
-        for (let v of filter) {
-            if (data[v]) {
-                if (Array.isArray(data[v])) {
-                    for (let vv of data[v]) {
-                        filterKey = pre + '-' + v + '_' + vv;
-                        task.push(['rpush', filterKey, fieldKey]);
-                        pool_keys.push(filterKey);
-                    }
-                } else {
-                    filterKey = pre + '-' + v + '_' + data[v];
-                    task.push(['rpush', filterKey, fieldKey]);
-                    pool_keys.push(filterKey);
-                }
+                fieldKey += '-' + field[k] + '_' + params[field[k]];
             }
         }
         if (!status) {
-            return false;
+            throw new Error('The field of data must be all exist');
+        }
+        return fieldKey;
+    }
+
+    getFilterKeys(params, poolName)
+    {
+        const pre = this.getPoolName(poolName);
+        const filter = this.code.filter;
+        let filterKey, filterKeys = [];
+        filterKeys.push(pre);
+        for (let v of filter) {
+            if (params.hasOwnProperty(v)) {
+                if (Array.isArray(params[v])) {
+                    for (let vv of params[v]) {
+                        filterKey = pre + '-' + v + '_' + vv;
+                        filterKeys.push(filterKey);
+                    }
+                } else {
+                    filterKey = pre + '-' + v + '_' + params[v];
+                    filterKeys.push(filterKey);
+                }
+            }
+        }
+        return filterKeys;
+    }
+
+    async setPool(data, info, poolName)
+    {
+        if (typeof info !== 'object' || !info) {
+            throw new Error('The parameter info type must be object.');
+        }
+        const pre = this.getPoolName(poolName);
+        const {redis} = this;
+        const fieldKey = this.getFieldKey(data, poolName);
+        const filterKeys = this.getFilterKeys(data, poolName);
+        let task = [];
+        for (let v of filterKeys) {
+            task.push(['rpush', v, fieldKey]);
         }
         await redis.multi(task).exec();
-        info['_' + pre] = pool_keys;
+        info['_' + pre] = filterKeys;
         info = JSON.stringify(info);
         await redis.set(fieldKey, info);
         return true;
@@ -102,7 +118,7 @@ class Pool {
 
     async getPool(params, poolName)
     {
-        const {redis, code} = this;
+        const {redis} = this;
         const pre = this.getPoolName(poolName);
         let page, pageSize;
         if (typeof params !== 'object' || !params) {
@@ -163,7 +179,7 @@ class Pool {
         }
         return {
             list: list,
-            meta: {
+            page: {
                 total: num,
                 perPage: pageSize,
                 totalPages: Math.ceil(num / pageSize),
@@ -174,25 +190,24 @@ class Pool {
         };
     }
 
+    async getPoolOne(data, poolName)
+    {
+        if (typeof data !== 'object') {
+            return false;
+        }
+        const {redis} = this;
+        const fieldKey = this.getFieldKey(data, poolName);
+        const info = await redis.get(fieldKey);
+        return info ? JSON.parse(info) : null;
+    }
+
+
     async delPool(data, poolName)
     {
         const {redis, code} = this;
         const pre = this.getPoolName(poolName);
-        const field = code.field;
-        let fieldKey, task = [], status = true;
-        for (let k in field) {
-            if (field.hasOwnProperty(k)) {
-                parseInt(k) === 0 ? fieldKey = pre : null;
-                if (!data[field[k]]) {
-                    status = false;
-                    break;
-                }
-                fieldKey += '-' + field[k] + '_' + data[field[k]];
-            }
-        }
-        if (!status) {
-            return false;
-        }
+        let task = [], status = true;
+        const fieldKey = this.getFieldKey(data, poolName);
         let info = await redis.get(fieldKey);
         if (!info) {
             return false;

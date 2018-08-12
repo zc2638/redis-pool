@@ -1,10 +1,10 @@
 {
-  "name": "pool",
+  "name": "redis-pool",
   "version": "1.0.0",
   "description": "Resource pool based on redis",
   "main": "index.js",
   "scripts": {
-    "test": "node test/index"
+    "test": "node test"
   },
   "repository": {
     "type": "git",
