@@ -1,5 +1,5 @@
 {
-  "name": "redis-pool",
+  "name": "@zctod/redis-pool",
   "version": "1.0.0",
   "description": "Resource pool based on redis",
   "main": "index.js",
@@ -10,7 +10,7 @@
     "type": "git",
     "url": "git+https://github.com/zc2638/redis-pool.git"
   },
-  "author": "zc",
+  "author": "zctod",
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/zc2638/redis-pool/issues"
