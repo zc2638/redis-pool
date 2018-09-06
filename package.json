@@ -1,6 +1,6 @@
 {
   "name": "@zctod/redis-pool",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Resource pool based on redis",
   "main": "index.js",
   "scripts": {

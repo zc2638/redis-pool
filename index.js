@@ -10,6 +10,7 @@ class Pool {
         this.code = {
             field: ['id'],
             filter: [],
+            matchSingle: [],
         };
         this.poolHeadName = 'redis_pool';
     }
@@ -27,20 +28,34 @@ class Pool {
         this.redis = new Redis(options);
     }
 
-    setCode(field = [], filter = [])
-    {
-        if (!Array.isArray(field) || !Array.isArray(filter)) {
-            throw new Error('The parameter type must be array.');
-        }
-        this.code = { field, filter };
-    }
-
     setPoolHeadName(name)
     {
         if (!name) {
             throw new Error('The parameter can not be empty.');
         }
         this.poolHeadName = name;
+    }
+
+    setCode(code)
+    {
+        if (!code) {
+            throw new Error('code is undefined');
+        }
+        if (!code.field) {
+            throw new Error('field is necessary');
+        }
+        if (
+            (code.field && !Array.isArray(code.field)) ||
+            (code.filter && !Array.isArray(code.filter)) ||
+            (code.matchSingle && !Array.isArray(code.matchSingle))
+        ) {
+            throw new Error('The parameter type must be array.');
+        }
+        this.code = {
+            field: code.field,
+            filter: code.filter,
+            matchSingle: code.matchSingle,
+        };
     }
 
     getPoolName(name)
@@ -74,26 +89,31 @@ class Pool {
         return fieldKey;
     }
 
-    getFilterKeys(params, poolName)
+    getOtherKeys(type = 'filter', params, poolName)
     {
+        if (typeof type === 'object') {
+            poolName = params;
+            params = type;
+            type = 'filter';
+        }
         const pre = this.getPoolName(poolName);
-        const filter = this.code.filter;
-        let filterKey, filterKeys = [];
-        filterKeys.push(pre);
-        for (let v of filter) {
+        const other = this.code[type];
+        let otherKey, otherKeys = [];
+        otherKeys.push(pre);
+        for (let v of other) {
             if (params.hasOwnProperty(v)) {
                 if (Array.isArray(params[v])) {
                     for (let vv of params[v]) {
-                        filterKey = pre + '-' + v + '_' + vv;
-                        filterKeys.push(filterKey);
+                        otherKey = pre + '-' + v + '_' + vv;
+                        otherKeys.push(otherKey);
                     }
                 } else {
-                    filterKey = pre + '-' + v + '_' + params[v];
-                    filterKeys.push(filterKey);
+                    otherKey = pre + '-' + v + '_' + params[v];
+                    otherKeys.push(otherKey);
                 }
             }
         }
-        return filterKeys;
+        return otherKeys;
     }
 
     async setPool(data, info, poolName)
@@ -104,7 +124,7 @@ class Pool {
         const pre = this.getPoolName(poolName);
         const {redis} = this;
         const fieldKey = this.getFieldKey(data, poolName);
-        const filterKeys = this.getFilterKeys(data, poolName);
+        const filterKeys = this.getOtherKeys(data, poolName);
         let task = [];
         for (let v of filterKeys) {
             task.push(['rpush', v, fieldKey]);
@@ -119,25 +139,41 @@ class Pool {
     async getPool(params, poolName)
     {
         const {redis} = this;
-        const pre = this.getPoolName(poolName);
-        let page, pageSize;
+        let page, pageSize, sort;
         if (typeof params !== 'object' || !params) {
             params = {};
         }
         page = params.hasOwnProperty('page') ? parseInt(params.page) : 1;
         pageSize = params.hasOwnProperty('pageSize') ? parseInt(params.pageSize) : 10;
+        sort = params.hasOwnProperty('sort') ? params.sort : 'DESC';
         delete params.page;
         delete params.pageSize;
-        const keys = Object.keys(params);
-        let filterKey, arr = [], dataArr = [], currentKeys = [];
-        if (keys.length > 0) {
-            for (let k of keys) {
-                filterKey = pre + '-' + k + '_' + params[k];
-                arr.push(await redis.lrange(filterKey, 0, -1));
+        delete params.sort;
+        const filterKeys = this.getOtherKeys(params, poolName);
+        const matchSingleKeys = this.getOtherKeys('matchSingle', params, poolName);
+        let arr = [], singleArr = [], dataArr = [], currentKeys = [];
+        for (let v of filterKeys) {
+            const res = await redis.lrange(v, 0, -1);
+            if (matchSingleKeys.indexOf(v) === -1) {
+                arr.push(res);
+            } else {
+                singleArr.push(res);
             }
-        } else {
-            arr.push(await redis.lrange(pre, 0, -1));
         }
+        if (singleArr.length > 0) {
+            let svArr = [];
+            for (let sk in singleArr) {
+                if (parseInt(sk) === 0) {
+                    svArr = singleArr[sk];
+                } else {
+                    svArr.push.apply(svArr, singleArr[sk]);
+                }
+            }
+            singleArr = svArr.filter(function(element, index, self){
+                return self.indexOf(element) === index;
+            });
+        }
+        arr.push.apply(singleArr);
         for (let kk in arr) {
             if (parseInt(kk) === 0) {
                 dataArr = arr[kk];
@@ -160,7 +196,7 @@ class Pool {
             dataArr = dataArr.sort(function (v1, v2) {
                 v1 = parseInt(v1.split(sortField + '_')[1]);
                 v2 = parseInt(v2.split(sortField + '_')[1]);
-                return v2 - v1;
+                return sort.toLocaleUpperCase() === 'ASC' ? v1 - v2 : v2 - v1;
             });
         }
         const start = (page - 1) * pageSize;
@@ -201,6 +237,17 @@ class Pool {
         return info ? JSON.parse(info) : null;
     }
 
+    async updatePoolOne(data, updateData, poolName)
+    {
+        if (typeof data !== 'object') {
+            return false;
+        }
+        const {redis} = this;
+        const pre = this.getPoolName(poolName);
+        const fieldKey = this.getFieldKey(data, poolName);
+        const info = await redis.get(fieldKey);
+        return info ? await redis.set(fieldKey, updateData) : null;
+    }
 
     async delPool(data, poolName)
     {
