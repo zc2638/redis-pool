@@ -249,7 +249,7 @@ class Pool {
         return info ? await redis.set(fieldKey, updateData) : null;
     }
 
-    async delPool(data, poolName)
+    async delPoolOne(data, poolName)
     {
         const {redis, code} = this;
         const pre = this.getPoolName(poolName);
